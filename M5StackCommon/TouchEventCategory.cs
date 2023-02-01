@@ -41,6 +41,9 @@ namespace nanoFramework.M5Core2
 
         /// <summary>Lift Up</summary>
         LiftUp = 0b0010_0000,
+
+        /// <summary>Press Down</summary>
+        PressDown = 0b0100_0000,
 #else
         /// <summary>
         /// Screen touched.

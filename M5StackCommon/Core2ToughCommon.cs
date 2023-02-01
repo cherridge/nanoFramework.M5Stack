@@ -43,6 +43,7 @@ namespace nanoFramework.M5Stack
         private static CancellationTokenSource _cancelThread;
         private static CancellationTokenSource _startThread;
         private static Point _lastPoint;
+        private static TouchEventCategory _lastPointCategory;
 #elif TOUGH
         private static Chsc6540 _touchController;
         private static bool _backLight;
@@ -180,6 +181,7 @@ namespace nanoFramework.M5Stack
 
                 GpioController.OpenPin(TouchPinInterrupt, PinMode.Input);
                 GpioController.RegisterCallbackForPinValueChangedEvent(TouchPinInterrupt, PinEventTypes.Rising | PinEventTypes.Falling, TouchCallback);
+
             }
         }
 
@@ -189,8 +191,20 @@ namespace nanoFramework.M5Stack
 
             if (pinValueChangedEventArgs.ChangeType == PinEventTypes.Falling)
             {
-                _cancelThread = new();
-                _startThread.Cancel();
+                var point = _touchController.GetPoint(true);
+                if (point.Event == Event.PressDown)
+                {
+                    var touchCategory = CheckIfInButtons(point.X, point.Y, TouchEventCategory.Unknown) | TouchEventCategory.PressDown;
+                    
+                    _lastPoint = point;
+                    _lastPointCategory = touchCategory;
+                    TouchEvent?.Invoke(_touchController, new TouchEventArgs() { TimeStamp = DateTime.UtcNow, EventCategory = EventCategory.Touch, TouchEventCategory = touchCategory, X = point.X, Y = point.Y, Id = point.TouchId });
+                    if (touchCategory== TouchEventCategory.PressDown)
+                    {
+                        _cancelThread = new();
+                        _startThread.Cancel();
+                    }
+                }
             }
             else
             {
@@ -198,11 +212,14 @@ namespace nanoFramework.M5Stack
                 _cancelThread.Cancel();
 
                 var point = _touchController.GetPoint(true);
-                if ((_lastPoint.X != point.X) && (_lastPoint.Y != point.Y))
+                
+               
+                if (!_lastPointCategory.HasFlag(TouchEventCategory.LiftUp) || ((_lastPoint.X != point.X) && (_lastPoint.Y != point.Y)))
                 {
-                    _lastPoint = point;
                     var touchCategory = CheckIfInButtons(point.X, point.Y, TouchEventCategory.Unknown) | TouchEventCategory.LiftUp;
-                    TouchEvent?.Invoke(_touchController, new TouchEventArgs() { TimeStamp = DateTime.UtcNow, EventCategory = EventCategory.Touch, TouchEventCategory = touchCategory, X = point.X, Y = point.Y, Id = point.TouchId });
+                    _lastPoint = point;
+                    _lastPointCategory = touchCategory;
+                    TouchEvent?.Invoke(_touchController, new TouchEventArgs() {  TimeStamp = DateTime.UtcNow, EventCategory = EventCategory.Touch, TouchEventCategory = touchCategory, X = point.X, Y = point.Y, Id = point.TouchId });
                 }
             }
 #else
@@ -243,10 +260,14 @@ namespace nanoFramework.M5Stack
                 if (touchNumber == 1)
                 {
                     var point = _touchController.GetPoint(true);
-                    _lastPoint = point;
-                    touchCategory = CheckIfInButtons(point.X, point.Y, TouchEventCategory.Unknown);
-                    touchCategory = point.Event == Event.Contact ? touchCategory | TouchEventCategory.Moving : touchCategory;
-                    TouchEvent?.Invoke(_touchController, new TouchEventArgs() { TimeStamp = DateTime.UtcNow, EventCategory = EventCategory.Touch, TouchEventCategory = touchCategory, X = point.X, Y = point.Y, Id = point.TouchId });
+                    if (((_lastPoint.X != point.X) && (_lastPoint.Y != point.Y)))
+                    {
+                        touchCategory = TouchEventCategory.Unknown;
+                        touchCategory = point.Event == Event.Contact ? touchCategory | TouchEventCategory.Moving : touchCategory;
+                        _lastPoint = point;
+                        _lastPointCategory = touchCategory;
+                        TouchEvent?.Invoke(_touchController, new TouchEventArgs() { TimeStamp = DateTime.UtcNow, EventCategory = EventCategory.Touch, TouchEventCategory = touchCategory, X = point.X, Y = point.Y, Id = point.TouchId });
+                    }
                 }
                 else if (touchNumber == 2)
                 {
@@ -257,8 +278,6 @@ namespace nanoFramework.M5Stack
                     touchCategory = CheckIfInButtons(dp.Point2.X, dp.Point2.Y, TouchEventCategory.DoubleTouch);
                     touchCategory = dp.Point2.Event == Event.Contact ? touchCategory | TouchEventCategory.Moving : touchCategory;
                     TouchEvent?.Invoke(_touchController, new TouchEventArgs() { TimeStamp = DateTime.UtcNow, EventCategory = EventCategory.Touch, TouchEventCategory = touchCategory, X = dp.Point2.X, Y = dp.Point2.Y, Id = dp.Point2.TouchId });
-                } else if (touchNumber==0) {
-                    TouchEvent?.Invoke(_touchController, new TouchEventArgs() { TimeStamp = DateTime.UtcNow, EventCategory = EventCategory.Touch, TouchEventCategory = TouchEventCategory.LiftUp , X = _lastPoint.X, Y = _lastPoint.Y });
                 }
 
                 // This is necessary to give time to the touch sensor
